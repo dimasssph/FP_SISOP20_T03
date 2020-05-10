@@ -1,256 +1,164 @@
 #include "types.h"
 #include "stat.h"
 #include "user.h"
-#include "fs.h"
 #include "fcntl.h"
+#include "fs.h"
 
-int pertama=0;
+char buf[512];
 
-char*
-fmtname(char *path)
+// dapatkan nama file
+char *getFileName(char *asal) 
 {
-    static char buf[512];
-    char *p;
-    for(p=path+strlen(path);p>=path && *p!='/';p--);
-    p++;
-    memmove(buf,p,strlen(p));
-    return buf;
+	char *filename = asal;
+	char *temp = asal;
+	int i;
+	for (i = strlen(temp); i >= 0; i--) {
+		if (temp[i] == '/') {
+			filename = &temp[i+1];
+			break;
+		}
+	}
+	return filename;
 }
 
-char*
-strcat(char *d,char *s)
+// fungsi untuk menggabungkan 2 string
+char* strcat(char *tujuan,char *asal)
 {
-    char *temp=d;
-    while(*d) ++d;
-    while(*s) *d++=*s++;
-    *d=0;
+    char *temp=tujuan;
+    while(*tujuan) ++tujuan;
+    while(*asal) *tujuan++=*asal++;
+    *tujuan=0;
     return temp;
 }
 
-void 
-copy(char *from,char *to) 
-{
-    struct stat st;
-    char *buf;
-    buf=(char*)malloc(512*sizeof(char));
-    int fd0;
-    // OPEN FILE FROM
-    if((fd0=open(from,O_RDONLY))<0)
-    {
-        printf(2,"cp: cannot open '%s' No such file or directory\n",from);
-        exit();
-    }
-    // JIKA ADALAH DIREKTORI
-    if(fstat(fd0,&st)>=0)
-    {
-        if(st.type==T_DIR)
-        {
-            printf(2,"cp: cannot copy directory '%s'\n",from);
-            exit();
-        }
-    }
-
-    int fd1;
-    char *temp;
-    temp=(char*)malloc(512*sizeof(char));
-    if(to[strlen(to)-1]=='/') to[strlen(to)-1]=0;
-    // OPEN FILE TO
-    fd1=open(to,0);
-    if(1)
-    {
-        // JIKA ADALAH DIREKTORI
-        if(fstat(fd1,&st)>=0 && st.type == T_DIR)
-        {
-            mkdir(to);
-            strcat(temp,to);
-            strcat(temp,"/");
-            strcat(temp,from);
-            close(fd1);
-            if((fd1=open(temp,O_CREATE | O_RDWR))<0)
-            {
-                printf(2,"cp: error while create '%s'\n",temp);
-                exit();
-            }
-        }
-        // JIKA ADALAH FILE
-        else{
-            close(fd1);
-            if((fd1=open(to,O_CREATE | O_RDWR))<0)
-            {
-                printf(2,"cp: error while create '%s'\n",to);
-                exit();
-            }
-        }
-    }
-    int n;
-    while((n=read(fd0,buf,sizeof(buf)))>0)
-    {
-        printf(fd1,"%s",buf);
-    }
-    close(fd1);
-    free(temp);
-    free(buf);
+// cek jika asal adalah directory
+int isDirectory(char *dir) {
+	struct stat st;
+	int result;
+	int fd = open(dir, O_RDONLY);
+	fstat(fd, &st);
+	if (st.type == T_DIR) 
+		result = 1;
+	else
+		result = 0;
+	close(fd);
+	return result;
 }
 
-void 
-cp_ls(char *path,int panjang,char *ekstensi)
+void copy_file(char *asal, char *tujuan) 
 {
-    char *buff;
-    buff=(char*)malloc(512*sizeof(char*));
-    int fd0,fd1;
-    struct dirent de;
-    struct stat st;
-    if(path[strlen(path)-1]=='/') path[strlen(path)-1]=0;
-    if((fd0=open(".",0))<0)
-    {
-        printf(2,"cp: cannot open '\".\"' No such file or directory\n");
-        exit();
-    }
+  
+  int n;
+	if (!isDirectory(asal)) 
+	{
+		char *tujuanBaru = (char *) malloc(strlen(getFileName(asal)) + strlen(tujuan) + 2);
+		strcpy(tujuanBaru, tujuan);
+		// cek tujuan merupakan folder atau bukan
+		if (isDirectory(tujuan)) 
+		{
+			if (tujuan[strlen(tujuan) - 1] != '/') 
+			strcat(tujuanBaru, "/");
+			strcat(tujuanBaru, getFileName(asal));
+		}
+		else if (tujuan[strlen(tujuan)-1] == '/') 
+		{
+			printf(1, "cp: %s is not a directory\n", tujuan);
+			return;
+		}
 
-    if((fd1=open(path,O_RDONLY))<0)
-    {
-        printf(2,"cp: cannot open '%s' No such file or directory\n",path);
-        exit();
-    }
-    if(fstat(fd1,&st)<0)
-    {
-        printf(2,"cp: cannot stat '%s' No such file or directory\n",path);
-        exit();
-    }
-    else
-    {
-        if(st.type!=T_DIR)
-        {
-            printf(2,"cp: '%s' is not directory\n",path);
-            exit();
-        }
-    }
-    // tidak perlu switch karena sudah pasti masuk ke direktori
-    strcat(buff,path);
-    strcat(buff,"/");
-    int len=strlen(buff);
-    while(read(fd0,&de,sizeof(de))==sizeof(de))
-    {
-        if(de.inum==0) 
-            continue;
-        if(de.name[0]=='.')
-            continue;
-        if(stat(de.name, &st) >= 0 && st.type == T_DIR) continue;
-        memmove(buff+len,de.name,strlen(de.name));
-        if(strcmp(de.name+(strlen(de.name)-panjang+1),ekstensi)==0) 
-            copy(de.name,buff);
-        memset(buff+len,'\0',sizeof(buff)+len);
-    }
-    free(buff);
-    close(fd0);
+    int fd0 = open(asal, O_RDONLY);
+		if (fd0 < 0) 
+		{
+			printf(1, "cp: cannot open %s\n", asal);
+			return;
+		}
+    int fd1 = open(tujuanBaru,O_RDWR | O_CREATE );
+		if (fd1 < 0) 
+		{
+			printf(1, "cp: cannot open %s\n", tujuan);
+			return;
+		}
+
+		while ((n = read(fd0, buf, sizeof(buf))) > 0) 
+			write(fd1, buf, n);
+	close(fd0);
+	close(fd1);
+	}
 }
 
-void
-cp_rek(char *from,char *to)
+void copy_R(char *asal, char *tujuan) 
 {
-    char *buff;
-    buff=(char*)malloc(512*sizeof(char*));
-    int fd0;
-    struct dirent de;
-    struct stat st;
-    if(from[strlen(from)-1]=='/') from[strlen(from)-1]=0;
-    if(to[strlen(to)-1]=='/') to[strlen(to)-1]=0;
-    if((fd0=open(from,0))<0)
+  char *p;
+  char buf[512];
+  char buf1[512];
+  struct dirent de;
+  
+  if (isDirectory(asal))
+  {  
+    int fd = open(asal, O_RDONLY);
+    if(fd < 0)
     {
-        printf(2,"cp: cannot open '%s' No such file or directory\n",from);
-        exit();
+      printf(1, "cp: cannot open %s\n", asal);
+      return;
     }
-    if(fstat(fd0,&st)<0)
+
+    strcpy(buf1, tujuan);
+    if (tujuan[strlen(tujuan) - 1] != '/') 
+      strcat(buf1, "/");
+    strcat(buf1, getFileName(asal));
+    
+    if (mkdir(buf1) < 0) 
     {
-        printf(2,"cp: cannot stat '%s' No such file or directory\n",from);
-        exit();
+      mkdir(tujuan);
+      strcpy(buf1, tujuan);
     }
-    char *temp,*temp2;
-    temp=(char*)malloc(512*sizeof(char*));
-    temp2=(char*)malloc(512*sizeof(char*));
-    switch(st.type)
+    strcpy(buf, asal);
+
+    p = buf + strlen(buf);
+    *p = '/';
+    p++;
+
+    while(read(fd, &de, sizeof(de)) == sizeof(de)) 
     {
-        case T_FILE:
-        {
-            copy(from,to);
-            break;
-        }
-        case T_DIR:
-        {
-            strcpy(buff,to);
-            strcat(buff,"/");
-            strcat(buff,from);
-            if(mkdir(to)>=0)
-            {
-                while(read(fd0,&de,sizeof(de))==sizeof(de))
-                {
-                    if(de.inum==0 || de.name[0]=='.') 
-                        continue;
-                    strcpy(temp,from);
-                    strcat(temp,"/");
-                    strcat(temp,de.name);
-                    strcpy(temp2,to);
-                    strcat(temp2,"/");
-                    strcat(temp2,de.name);
-                    cp_rek(temp,temp2);
-                }
-            }
-            else
-            {
-                while(read(fd0,&de,sizeof(de))==sizeof(de))
-                {
-                    if(de.inum==0 || de.name[0]=='.') 
-                        continue;
-                    strcpy(temp,from);
-                    strcat(temp,"/");
-                    strcat(temp,de.name);
-                    strcpy(temp2,buff);
-                    strcat(temp2,"/");
-                    strcat(temp2,de.name);
-                    cp_rek(temp,temp2);
-                }
-            }
-            break;
-        }
-        close(fd0);
+      if(de.inum == 0 || strcmp(de.name, ".") == 0 || strcmp(de.name, "..") == 0 )
+        continue;
+
+      memmove(p, de.name, DIRSIZ);
+      p[DIRSIZ] = 0;
+
+      if (isDirectory(buf))
+        copy_R(buf, buf1);
+      else
+        copy_file(buf, buf1);
     }
-    free(temp);
-    free(temp2);
-    free(buff);
+  close(fd);
+  }
+
 }
 
-int main(int argc,char *argv[])
+void copy_all(char *tujuan) 
 {
-    if(argc<2)
-    {
-        printf(2,"Usage : cp [OPTIONS] [source] [dest]\n");
-        printf(2,"Options:\n");
-        printf(2,"  -R : copy file secara recursive\n");
-    }
-    if(argv[1][0]=='*')
-    {
-        int panjang=strlen(argv[1]);
-        char eks[512];
-        strcpy(eks,argv[1]+1);
-        cp_ls(argv[2],panjang,eks);
-        exit();
-    }
-    else if(strcmp(argv[1],"-R")==0)
-    {
-        char *temp;
-        temp=(char*)malloc(512*sizeof(char*));
-        strcat(temp,argv[3]);
-        strcat(temp,"/");
-        strcat(temp,argv[2]);
-        mkdir(temp);
-        cp_rek(argv[2],argv[3]);
-        free(temp);
-        exit();
-    }
-    else
-    {
-        copy(argv[1],argv[2]);
-        exit();
-    }
+  copy_R(".", tujuan);
+}
+
+int main(int argc, char *argv[]) 
+{
+
+  if (argc <= 2 ) 
+  {
+    printf(2, "cp: missing destination file operand after %s\n", argv[1]);
     exit();
-}	
+  }
+  if(isDirectory(argv[1]))
+    printf(1,"copy folder pakai -R\n");
+
+  if (strcmp(argv[1], "*") == 0)
+    copy_all(argv[2]);
+  else if (strcmp(argv[1], "-r") == 0)
+    { 
+	  copy_R(argv[2], argv[3]);
+    }
+  else
+	  copy_file(argv[1], argv[2]);
+  exit();
+}
